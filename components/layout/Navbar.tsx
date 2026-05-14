@@ -15,9 +15,13 @@ export default function Navbar() {
   const pathname = usePathname();
 
   return (
-    <nav className="relative mx-auto flex w-full max-w-6xl flex-row items-center justify-between px-4 py-6">
+    <nav className="fixed left-0 top-0 z-50 flex w-full justify-center bg-background">
+      <div className="relative flex w-full max-w-6xl flex-row items-center justify-between px-4 py-6">
       <div>
-        <Link href="/" className="text-xl font-bold">
+        <Link
+          href="/"
+          className="block max-w-24 text-base font-bold leading-tight sm:max-w-none sm:text-xl"
+        >
           Mohamad Hanafi
         </Link>
       </div>
@@ -37,7 +41,7 @@ export default function Navbar() {
               }`}
             >
               <Icon size={18} strokeWidth={2} />
-              {label}
+              <span className="hidden sm:inline">{label}</span>
             </Link>
           );
         })}
@@ -64,6 +68,7 @@ export default function Navbar() {
             <FaLinkedin size={22} />
           </a>
         </div>
+      </div>
       </div>
     </nav>
   );

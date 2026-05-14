@@ -10,7 +10,7 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Mohamad Hanafi | Portfolio",
+  title: "Mohamad Hanafi",
   description: "Portfolio website",
 };
 
@@ -21,9 +21,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${jakarta.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">
+      <body className="h-full overflow-hidden">
         <Navbar />
-        {children}
+        <div className="flex h-screen flex-col overflow-y-auto px-0 pb-20 pt-24">
+          {children}
+        </div>
         <Footer />
       </body>
     </html>
