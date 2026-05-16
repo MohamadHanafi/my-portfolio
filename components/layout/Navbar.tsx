@@ -16,7 +16,7 @@ export default function Navbar() {
 
   return (
     <nav className="fixed left-0 top-0 z-50 flex w-full justify-center bg-background">
-      <div className="relative flex w-full max-w-6xl flex-row items-center justify-between px-4 py-6">
+      <div className="relative flex w-full max-w-6xl flex-row items-center justify-between px-12 py-6">
       <div>
         <Link
           href="/"
@@ -34,14 +34,14 @@ export default function Navbar() {
               key={href}
               href={href}
               aria-current={isActive ? "page" : undefined}
-              className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition ${
+              className={`flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold transition lg:px-5 ${
                 isActive
                   ? "bg-white text-foreground shadow-sm dark:bg-zinc-800"
                   : "hover:bg-white/60 dark:hover:bg-white/10"
               }`}
             >
               <Icon size={18} strokeWidth={2} />
-              <span className="hidden sm:inline">{label}</span>
+              <span className="hidden lg:inline">{label}</span>
             </Link>
           );
         })}

@@ -73,7 +73,7 @@ const skills = [
 
 export default function AboutPage() {
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-20">
+    <main className="flex flex-1 items-center justify-center px-12 py-20">
       <div className="mx-auto flex w-full max-w-6xl flex-col items-center text-center">
         <section className="max-w-3xl">
           <h1 className="text-2xl font-black text-zinc-900 dark:text-white">

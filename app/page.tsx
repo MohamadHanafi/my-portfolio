@@ -3,7 +3,7 @@ import Button from "@/components/ui/Button";
 
 export default function Home() {
   return (
-    <div className="flex flex-1 items-center justify-center bg-background px-4 font-sans">
+    <div className="flex flex-1 items-center justify-center bg-background px-12 font-sans">
       <main className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
         <h1 className="text-5xl font-black leading-none text-black sm:text-6xl lg:text-7xl dark:text-white">
           Hi, I&apos;m Mohamad Hanafi
