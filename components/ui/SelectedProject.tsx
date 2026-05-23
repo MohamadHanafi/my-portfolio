@@ -1,20 +1,28 @@
 import { ExternalLink, Play } from "lucide-react";
 import Image from "next/image";
 import Button from "@/components/ui/Button";
-
-type ProjectAction = {
-  label: string;
-  href: string;
-};
+import type { ProjectAction } from "@/app/lib/projects";
 
 type SelectedProjectProps = {
   title: string;
   description: string;
   imageAlt: string;
   imageSrc?: string;
-  primaryAction: ProjectAction;
-  secondaryAction: ProjectAction;
+  primaryAction?: ProjectAction;
+  secondaryAction?: ProjectAction;
 };
+
+function getActionIcon(icon: ProjectAction["icon"]) {
+  if (icon === "external") {
+    return <ExternalLink size={18} />;
+  }
+
+  if (icon === "play") {
+    return <Play size={18} fill="currentColor" />;
+  }
+
+  return undefined;
+}
 
 export default function SelectedProject({
   title,
@@ -33,6 +41,7 @@ export default function SelectedProject({
               src={imageSrc}
               alt={imageAlt}
               fill
+              loading="eager"
               sizes="(min-width: 1024px) 50vw, 100vw"
               className="object-cover"
             />
@@ -76,27 +85,38 @@ export default function SelectedProject({
         <h2 className="text-xl font-black leading-tight text-zinc-950 sm:text-2xl dark:text-zinc-50">
           {title}
         </h2>
-        <p className="mt-5 text-sm leading-7 text-zinc-800 sm:text-base dark:text-zinc-200">
-          {description}
-        </p>
-        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Button
-            href={primaryAction.href}
-            icon={<Play size={18} fill="currentColor" />}
-            className="whitespace-nowrap px-4 py-3 text-xs sm:px-6 sm:text-sm"
-          >
-            {primaryAction.label}
-          </Button>
-          <Button
-            href={secondaryAction.href}
-            variant="outlined"
-            icon={<ExternalLink size={18} />}
-            iconPosition="right"
-            className="whitespace-nowrap px-4 py-3 text-xs sm:px-6 sm:text-sm"
-          >
-            {secondaryAction.label}
-          </Button>
+        <div className="mt-5 space-y-4 text-sm leading-7 text-zinc-800 sm:text-base dark:text-zinc-200">
+          {description.split("\n\n").map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
         </div>
+        {(primaryAction || secondaryAction) && (
+          <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center">
+            {primaryAction && (
+              <Button
+                href={primaryAction.href}
+                icon={getActionIcon(primaryAction.icon)}
+                iconPosition={primaryAction.iconPosition}
+                target={primaryAction.openInNewTab ? "_blank" : undefined}
+                className="whitespace-nowrap px-4 py-3 text-xs sm:px-6 sm:text-sm"
+              >
+                {primaryAction.label}
+              </Button>
+            )}
+            {secondaryAction && (
+              <Button
+                href={secondaryAction.href}
+                variant="outlined"
+                icon={getActionIcon(secondaryAction.icon)}
+                iconPosition={secondaryAction.iconPosition}
+                target={secondaryAction.openInNewTab ? "_blank" : undefined}
+                className="whitespace-nowrap px-4 py-3 text-xs sm:px-6 sm:text-sm"
+              >
+                {secondaryAction.label}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );

@@ -7,6 +7,8 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   href?: never;
   icon?: ReactNode;
   iconPosition?: "left" | "right";
+  rel?: never;
+  target?: never;
   variant?: ButtonVariant;
 };
 
@@ -16,6 +18,8 @@ type ButtonLinkProps = {
   href: string;
   icon?: ReactNode;
   iconPosition?: "left" | "right";
+  rel?: string;
+  target?: string;
   variant?: ButtonVariant;
 };
 
@@ -34,10 +38,15 @@ export default function Button({
   href,
   icon,
   iconPosition = "left",
+  rel,
+  target,
   variant = "filled",
   ...props
 }: ButtonProps | ButtonLinkProps) {
   const classes = `${baseClasses} ${variantClasses[variant]} ${className}`;
+  const isExternal = href?.startsWith("http");
+  const linkTarget = target ?? (isExternal ? "_blank" : undefined);
+  const linkRel = rel ?? (linkTarget === "_blank" ? "noreferrer" : undefined);
   const content = (
     <>
       {iconPosition === "left" && icon}
@@ -47,8 +56,16 @@ export default function Button({
   );
 
   if (href) {
+    if (isExternal) {
+      return (
+        <a href={href} className={classes} target={linkTarget} rel={linkRel}>
+          {content}
+        </a>
+      );
+    }
+
     return (
-      <Link href={href} className={classes}>
+      <Link href={href} className={classes} target={linkTarget} rel={linkRel}>
         {content}
       </Link>
     );

@@ -80,13 +80,15 @@ export default function AboutPage() {
             What I do
           </h1>
           <p className="mt-8 text-base leading-8 text-zinc-800 dark:text-zinc-200">
-            I am a software engineer with a PhD in Engineering, a background in
-            computer engineering, and an IBM AI Engineering Professional
-            Certificate. I build practical AI-powered applications, data-driven
-            tools, and clean web interfaces using modern software engineering
-            workflows. My focus is on turning complex ideas into usable
-            products, combining full-stack development with machine learning,
-            generative AI, RAG systems, and LLM-based applications.
+            True innovation happens when deep domain expertise meets powerful
+            software engineering. Holding a PhD in Civil Engineering and
+            certified as an IBM AI Engineer, I specialize in building practical,
+            intelligent products that make an impact. I am deeply passionate
+            about the intersection of machine learning, generative AI, and
+            robust full stack workflows. Whether I am architecting complex large
+            language model applications or engineering intuitive user
+            interfaces, my goal is always to turn sophisticated ideas into
+            scalable, usable digital products.
           </p>
         </section>
 

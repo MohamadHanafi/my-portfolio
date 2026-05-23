@@ -20,7 +20,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${jakarta.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${jakarta.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
+    >
       <body className="h-full overflow-hidden">
         <Navbar />
         <div className="flex h-screen flex-col overflow-y-auto px-0 pb-20 pt-24">

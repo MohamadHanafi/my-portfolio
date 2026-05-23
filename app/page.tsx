@@ -9,7 +9,7 @@ export default function Home() {
           Hi, I&apos;m Mohamad Hanafi
         </h1>
         <p className="mt-5 text-2xl font-medium text-zinc-900 sm:text-3xl dark:text-zinc-100">
-          Software Engineer | AI Integration Specialist
+          PhD in Engineering | AI Integration Specialist
         </p>
         <p className="mt-10 max-w-3xl text-lg leading-snug text-zinc-800 sm:text-xl dark:text-zinc-200">
           I engineer intelligent systems that automate workflows, power user
