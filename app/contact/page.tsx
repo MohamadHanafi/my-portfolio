@@ -1,5 +1,4 @@
-import { Mail } from "lucide-react";
-import Button from "@/components/ui/Button";
+import ContactChatButton from "@/components/ui/ContactChatButton";
 
 export default function ContactPage() {
   return (
@@ -13,13 +12,7 @@ export default function ContactPage() {
           solutions. Whether you have a project, a job opportunity, or just want
           to connect, let&apos;s talk!
         </p>
-        <Button
-          href="https://www.linkedin.com/in/mohamadhanafi/"
-          icon={<Mail size={20} strokeWidth={2} />}
-          className="mt-8 px-7 py-3 text-sm"
-        >
-          Get in Touch
-        </Button>
+        <ContactChatButton />
       </section>
     </main>
   );
