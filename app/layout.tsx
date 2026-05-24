@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
+import ChatLauncher from "@/components/ui/ChatLauncher";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -30,6 +31,7 @@ export default function RootLayout({
         <div className="flex h-screen flex-col overflow-y-auto px-0 pb-20 pt-24">
           {children}
         </div>
+        <ChatLauncher />
         <Footer />
       </body>
     </html>

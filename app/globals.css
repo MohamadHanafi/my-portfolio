@@ -28,6 +28,66 @@ body {
   font-family: var(--font-jakarta), sans-serif;
 }
 
+.chat-bot-eyes {
+  animation: chat-eyes 4.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 180ms ease;
+}
+
+.chat-bot-smile {
+  opacity: 0;
+  stroke-dasharray: 10;
+  stroke-dashoffset: 10;
+  transform: translateY(1px);
+  transition:
+    opacity 180ms ease,
+    stroke-dashoffset 260ms ease,
+    transform 180ms ease;
+}
+
+.chat-launcher-button:hover .chat-bot-eyes,
+.chat-launcher-button:focus-visible .chat-bot-eyes {
+  animation-play-state: paused;
+  transform: translateX(0.7px) translateY(-0.7px) scale(1.22);
+}
+
+.chat-launcher-button:hover .chat-bot-smile,
+.chat-launcher-button:focus-visible .chat-bot-smile {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transform: translateY(0);
+}
+
+@keyframes chat-eyes {
+  0%,
+  18%,
+  100% {
+    transform: translateX(0) translateY(0) scaleY(1);
+  }
+
+  28%,
+  38% {
+    transform: translateX(1.2px) translateY(-0.2px) scaleY(1);
+  }
+
+  48% {
+    transform: translateX(1.2px) translateY(-0.2px) scaleY(0.12);
+  }
+
+  56% {
+    transform: translateX(-1.2px) translateY(0.2px) scaleY(1);
+  }
+
+  68% {
+    transform: translateX(-1.2px) translateY(0.2px) scaleY(1);
+  }
+
+  78% {
+    transform: translateX(0) translateY(0) scaleY(1);
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
