@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronRight,
@@ -18,12 +19,19 @@ import {
   PanelRight,
   Plus,
   Send,
-  Sparkles,
+  Square,
   X,
 } from "lucide-react";
+import {
+  ChatActionType,
+  ChatConversationMode,
+  type ChatRequestPayload,
+  type ChatResponseAction,
+  type ChatResponsePayload,
+} from "@/app/lib/chat";
 
 type ChatMode = "sidebar" | "floating" | "fullscreen";
-type ChatStatus = "idle" | "loading" | "thinking";
+type ChatStatus = "idle" | "loading";
 type ChatMessage = {
   id: number;
   role: "user" | "assistant";
@@ -40,20 +48,62 @@ const modeOptions: Array<{
   { id: "fullscreen", label: "Full screen", Icon: Maximize2 },
 ];
 
-const suggestions = [
-  {
-    label: "Summarize this page",
-    prompt: "Summarize this page",
-  },
-  {
-    label: "Translate this page",
-    prompt: "Translate this page",
-  },
-  {
-    label: "Analyze for insights",
-    prompt: "Analyze this page for insights",
-  },
-];
+function createSessionId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getCurrentLocation() {
+  if (typeof window === "undefined") {
+    return "#home";
+  }
+
+  if (window.location.hash) {
+    return window.location.hash;
+  }
+
+  const path = window.location.pathname.replace(/^\/|\/$/g, "");
+  return path ? `#${path}` : "#home";
+}
+
+function getNavigationHref(target: string) {
+  if (!target.startsWith("#")) {
+    return target;
+  }
+
+  const page = target.slice(1);
+
+  if (!page || page === "home") {
+    return "/";
+  }
+
+  return `/${page}`;
+}
+
+function getPageContent() {
+  if (typeof document === "undefined") {
+    return "";
+  }
+
+  const pageShell =
+    document.querySelector("[data-page-content]") ??
+    document.querySelector(".portfolio-page-shell") ??
+    document.querySelector("main");
+  return pageShell?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function attachPageContent(message: string) {
+  const pageContent = getPageContent();
+
+  if (!pageContent) {
+    return message;
+  }
+
+  return `${message}\n\nPage content:\n${pageContent}`;
+}
 
 function AnimatedBotIcon({ className = "h-7 w-7" }: { className?: string }) {
   return (
@@ -110,33 +160,15 @@ function LoadingResponse() {
   );
 }
 
-function ThinkingResponse() {
-  return (
-    <div
-      aria-live="polite"
-      aria-label="Assistant is thinking"
-      className="mt-5 flex items-center justify-start gap-2.5"
-    >
-      <div className="relative flex h-10 w-10 items-center justify-center">
-        <span className="absolute inset-0 animate-pulse rounded-full bg-primary/10" />
-        <span className="absolute inset-1 rounded-full border border-primary/20" />
-        <div className="relative flex h-7 w-7 animate-pulse items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:border-zinc-800 dark:bg-zinc-950">
-          <AnimatedBotIcon className="h-4 w-4" />
-        </div>
-      </div>
-      <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-        Thinking
-      </span>
-    </div>
-  );
-}
-
 function MarkdownText({ content }: { content: string }) {
   const renderInline = (text: string) =>
     text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
       if (part.startsWith("**") && part.endsWith("**")) {
         return (
-          <strong key={index} className="font-semibold text-zinc-950 dark:text-zinc-50">
+          <strong
+            key={index}
+            className="font-semibold text-zinc-950 dark:text-zinc-50"
+          >
             {part.slice(2, -2)}
           </strong>
         );
@@ -173,7 +205,7 @@ function MessageList({
   messagesEndRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {messages.map((chatMessage) =>
         chatMessage.role === "user" ? (
           <div key={chatMessage.id} className="flex justify-end">
@@ -185,11 +217,10 @@ function MessageList({
           <div key={chatMessage.id} className="max-w-[92%]">
             <MarkdownText content={chatMessage.content} />
           </div>
-        ),
+        )
       )}
 
       {chatStatus === "loading" && <LoadingResponse />}
-      {chatStatus === "thinking" && <ThinkingResponse />}
       <div ref={messagesEndRef} />
     </div>
   );
@@ -208,13 +239,21 @@ export default function ChatPanel({
   onClose,
   onInitialPromptHandled,
 }: ChatPanelProps) {
+  const router = useRouter();
   const [mode, setMode] = useState<ChatMode>("sidebar");
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatStatus, setChatStatus] = useState<ChatStatus>("idle");
   const [isSmallScreen, setIsSmallScreen] = useState(false);
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isPageContentAttached, setIsPageContentAttached] = useState(false);
+  const [conversationMode, setConversationMode] = useState(
+    ChatConversationMode.Chat
+  );
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const isUserAbortRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const sessionIdRef = useRef(createSessionId());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -229,9 +268,7 @@ export default function ChatPanel({
 
   useEffect(() => {
     return () => {
-      if (statusTimeoutRef.current) {
-        clearTimeout(statusTimeoutRef.current);
-      }
+      activeRequestRef.current?.abort();
     };
   }, []);
 
@@ -263,53 +300,163 @@ export default function ChatPanel({
       ? "mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col justify-center px-5 pb-8 pt-10 sm:px-8"
       : activeMode === "fullscreen"
         ? "mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-5 pb-8 pt-6 sm:px-8"
-      : activeMode === "floating"
-        ? "flex min-h-0 flex-1 flex-col px-3.5 pb-3.5 pt-3.5"
-      : "flex min-h-0 flex-1 flex-col px-4 pb-4 pt-4";
+        : activeMode === "floating"
+          ? "flex min-h-0 flex-1 flex-col px-3.5 pb-3.5 pt-3.5"
+          : "flex min-h-0 flex-1 flex-col px-4 pb-4 pt-4";
 
   const hasMessage = message.trim().length > 0;
   const isProcessing = chatStatus !== "idle";
 
-  const submitPrompt = useCallback((prompt: string) => {
-    const submittedMessage = prompt.trim();
+  const handleChatAction = useCallback(
+    (action?: ChatResponseAction | null) => {
+      if (!action) {
+        return;
+      }
 
-    if (!submittedMessage || isProcessing) {
-      return;
-    }
+      if (action.type === ChatActionType.StartContactFlow) {
+        setConversationMode(ChatConversationMode.Contact);
+        return;
+      }
 
-    console.log(submittedMessage);
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: Date.now(),
-        role: "user",
-        content: submittedMessage,
-      },
-    ]);
-    setMessage("");
-    setChatStatus("loading");
+      if (action.type === ChatActionType.CompleteContactFlow) {
+        setConversationMode(ChatConversationMode.Chat);
+        return;
+      }
 
-    if (statusTimeoutRef.current) {
-      clearTimeout(statusTimeoutRef.current);
-    }
+      if (action.type !== ChatActionType.Navigate) {
+        return;
+      }
 
-    statusTimeoutRef.current = setTimeout(() => {
-      setChatStatus("thinking");
+      const href = getNavigationHref(action.target);
 
-      statusTimeoutRef.current = setTimeout(() => {
+      if (href.startsWith("/")) {
+        router.push(href);
+        return;
+      }
+
+      window.location.href = href;
+    },
+    [router]
+  );
+
+  const submitPrompt = useCallback(
+    async (prompt: string) => {
+      const submittedMessage = prompt.trim();
+
+      if (!submittedMessage || isProcessing) {
+        return;
+      }
+
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      isUserAbortRef.current = false;
+      activeRequestRef.current?.abort();
+
+      const abortController = new AbortController();
+      activeRequestRef.current = abortController;
+      const backendMessage = isPageContentAttached
+        ? attachPageContent(submittedMessage)
+        : submittedMessage;
+
+      const payload: ChatRequestPayload = {
+        message: backendMessage,
+        session_id: sessionIdRef.current,
+        mode: conversationMode,
+        current_location: getCurrentLocation(),
+      };
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: Date.now(),
+          role: "user",
+          content: submittedMessage,
+        },
+      ]);
+      setMessage("");
+      setChatStatus("loading");
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: abortController.signal,
+        });
+
+        const data = (await response.json()) as
+          | ChatResponsePayload
+          | { error?: string; detail?: unknown };
+
+        if (!response.ok) {
+          const errorMessage =
+            "error" in data && data.error
+              ? data.error
+              : "The backend returned an error.";
+
+          throw new Error(errorMessage);
+        }
+
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        const chatData = data as ChatResponsePayload;
+
+        sessionIdRef.current = chatData.session_id || sessionIdRef.current;
         setMessages((currentMessages) => [
           ...currentMessages,
           {
             id: Date.now() + 1,
             role: "assistant",
-            content: `I received your message: **${submittedMessage}**\n\n- Loading and thinking states are working.\n- This response is rendered as free-form markdown-style text.`,
+            content:
+              chatData.reply ||
+              "I got a response, but it did not include a reply.",
           },
         ]);
-        setChatStatus("idle");
-        statusTimeoutRef.current = null;
-      }, 5000);
-    }, 2000);
-  }, [isProcessing]);
+        handleChatAction(chatData.action);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          if (requestIdRef.current === requestId && isUserAbortRef.current) {
+            setMessages((currentMessages) => [
+              ...currentMessages,
+              {
+                id: Date.now() + 1,
+                role: "assistant",
+                content: "User aborted request.",
+              },
+            ]);
+          }
+
+          return;
+        }
+
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: Date.now() + 1,
+            role: "assistant",
+            content: "I am facing a network error. Could you please try again?",
+          },
+        ]);
+        setMessage(submittedMessage);
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setChatStatus("idle");
+          activeRequestRef.current = null;
+          isUserAbortRef.current = false;
+        }
+      }
+    },
+    [conversationMode, handleChatAction, isPageContentAttached, isProcessing]
+  );
 
   useEffect(() => {
     if (!initialPrompt) {
@@ -324,23 +471,31 @@ export default function ChatPanel({
     return () => clearTimeout(initialPromptTimeout);
   }, [initialPrompt, onInitialPromptHandled, submitPrompt]);
 
-  function handleSelectSuggestion(prompt: string) {
-    submitPrompt(prompt);
-  }
-
   function handleSubmitMessage() {
     submitPrompt(message);
   }
 
-  function handleStartNewChat() {
-    if (statusTimeoutRef.current) {
-      clearTimeout(statusTimeoutRef.current);
-      statusTimeoutRef.current = null;
+  function handleAbortRequest() {
+    if (!activeRequestRef.current) {
+      return;
     }
 
+    isUserAbortRef.current = true;
+    activeRequestRef.current.abort();
+  }
+
+  function handleStartNewChat() {
+    requestIdRef.current += 1;
+    isUserAbortRef.current = false;
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = null;
+
+    sessionIdRef.current = createSessionId();
     setMessages([]);
     setMessage("");
     setChatStatus("idle");
+    setConversationMode(ChatConversationMode.Chat);
+    setIsPageContentAttached(false);
     setIsModeMenuOpen(false);
   }
 
@@ -351,248 +506,248 @@ export default function ChatPanel({
   return (
     <>
       <section
-          aria-label="AI chat"
-          className={panelClassName}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setIsModeMenuOpen(false);
-              onClose();
-            }
-          }}
-        >
-          <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4">
-            <div className="flex min-w-0 items-center gap-2">
-              {hasMessages && (
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                  <AnimatedBotIcon className="h-4 w-4" />
-                </div>
-              )}
-              <h2 className="truncate text-[15px] font-semibold tracking-normal">
-                AI chat
-              </h2>
-            </div>
-
-            <div className="relative flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                aria-label="Start new chat"
-                disabled={!hasMessages}
-                onClick={handleStartNewChat}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:hover:bg-transparent"
-              >
-                <MessageCirclePlus className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="Change chat view"
-                aria-expanded={isModeMenuOpen}
-                disabled={isSmallScreen}
-                onClick={() => setIsModeMenuOpen((value) => !value)}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-45 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                title={
-                  isSmallScreen
-                    ? "Full screen on small screens"
-                    : "Change chat view"
-                }
-              >
-                <ModeIcon mode={activeMode} />
-              </button>
-              <button
-                type="button"
-                aria-label="Close chat"
-                onClick={() => {
-                  setIsModeMenuOpen(false);
-                  onClose();
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-zinc-300 dark:hover:bg-zinc-900"
-              >
-                {activeMode === "fullscreen" ? (
-                  <X className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <ChevronRight className="h-5 w-5" aria-hidden="true" />
-                )}
-              </button>
-
-              {isModeMenuOpen && !isSmallScreen && (
-                <div className="absolute right-8 top-9 z-10 w-52 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-zinc-800 dark:bg-zinc-950">
-                  {modeOptions.map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => {
-                        setMode(id);
-                        setIsModeMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-zinc-100 dark:hover:bg-zinc-900"
-                    >
-                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      {activeMode === id && (
-                        <Check
-                          className="h-4 w-4 shrink-0"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </header>
-
-          <div className={contentClassName}>
-            {!hasMessages ? (
-              <div
-                className={
-                  activeMode === "fullscreen"
-                    ? "text-center"
-                    : "mt-auto text-left"
-                }
-              >
-                <div
-                  className={
-                    activeMode === "fullscreen"
-                      ? "mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-[0_14px_36px_rgba(0,0,0,0.12)] dark:border-zinc-800 dark:bg-zinc-950"
-                      : "mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-[0_12px_30px_rgba(0,0,0,0.12)] dark:border-zinc-800 dark:bg-zinc-950"
-                  }
-                >
-                  <AnimatedBotIcon
-                    className={
-                      activeMode === "fullscreen" ? "h-8 w-8" : "h-6 w-6"
-                    }
-                  />
-                </div>
-
-                <p
-                  className={
-                    activeMode === "fullscreen"
-                      ? "text-balance text-3xl font-extrabold tracking-normal text-zinc-900 dark:text-zinc-50 sm:text-4xl"
-                      : "text-pretty text-base font-extrabold tracking-normal text-zinc-900 dark:text-zinc-50"
-                  }
-                >
-                  Nice to meet you! How can I help?
-                </p>
-
-                <div
-                  className={
-                    activeMode === "fullscreen"
-                      ? "mx-auto mt-8 grid w-full max-w-3xl gap-3 text-left sm:grid-cols-2"
-                      : "mt-5 space-y-2"
-                  }
-                >
-                  {suggestions.map(({ label, prompt }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      disabled={isProcessing}
-                      onClick={() => handleSelectSuggestion(prompt)}
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-                    >
-                      <Sparkles
-                        className="h-4 w-4 shrink-0 text-primary"
-                        aria-hidden="true"
-                      />
-                      <span className="min-w-0">{label}</span>
-                    </button>
-                  ))}
-                </div>
+        aria-label="AI chat"
+        className={panelClassName}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setIsModeMenuOpen(false);
+            onClose();
+          }
+        }}
+      >
+        <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            {hasMessages && (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <AnimatedBotIcon className="h-4 w-4" />
               </div>
-            ) : (
-              <MessageList
-                messages={messages}
-                chatStatus={chatStatus}
-                messagesEndRef={messagesEndRef}
-              />
             )}
+            <h2 className="truncate text-[15px] font-semibold tracking-normal">
+              AI chat
+            </h2>
+            <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase leading-none tracking-normal text-primary">
+              Beta
+            </span>
+          </div>
 
+          <div className="relative flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label="Start new chat"
+              disabled={!hasMessages}
+              onClick={handleStartNewChat}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent dark:text-zinc-300 dark:hover:bg-zinc-900 dark:disabled:hover:bg-transparent"
+            >
+              <MessageCirclePlus className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="Change chat view"
+              aria-expanded={isModeMenuOpen}
+              disabled={isSmallScreen}
+              onClick={() => setIsModeMenuOpen((value) => !value)}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-45 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              title={
+                isSmallScreen
+                  ? "Full screen on small screens"
+                  : "Change chat view"
+              }
+            >
+              <ModeIcon mode={activeMode} />
+            </button>
+            <button
+              type="button"
+              aria-label="Close chat"
+              onClick={() => {
+                setIsModeMenuOpen(false);
+                onClose();
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              {activeMode === "fullscreen" ? (
+                <X className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+              )}
+            </button>
+
+            {isModeMenuOpen && !isSmallScreen && (
+              <div className="absolute right-8 top-9 z-10 w-52 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-zinc-800 dark:bg-zinc-950">
+                {modeOptions.map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setMode(id);
+                      setIsModeMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-zinc-100 dark:hover:bg-zinc-900"
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    {activeMode === id && (
+                      <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </header>
+
+        <div className={contentClassName}>
+          {!hasMessages ? (
             <div
               className={
                 activeMode === "fullscreen"
-                  ? "mx-auto mt-10 w-full max-w-4xl"
-                  : activeMode === "floating"
-                    ? "mt-5"
-                  : "mt-7"
+                  ? "text-center"
+                  : "mt-auto text-left"
               }
             >
               <div
                 className={
-                  activeMode === "floating"
-                    ? "rounded-2xl border-2 border-primary bg-white p-2.5 shadow-[0_14px_42px_rgba(20,99,255,0.1)] dark:bg-zinc-950"
-                    : "rounded-2xl border-2 border-primary bg-white p-3 shadow-[0_14px_42px_rgba(20,99,255,0.1)] dark:bg-zinc-950"
+                  activeMode === "fullscreen"
+                    ? "mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-[0_14px_36px_rgba(0,0,0,0.12)] dark:border-zinc-800 dark:bg-zinc-950"
+                    : "mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-white text-primary shadow-[0_12px_30px_rgba(0,0,0,0.12)] dark:border-zinc-800 dark:bg-zinc-950"
                 }
               >
-                {hasMessages && !isProcessing && (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {suggestions.map(({ label, prompt }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => handleSelectSuggestion(prompt)}
-                        className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-primary/15 dark:hover:text-zinc-50"
-                      >
-                        <Sparkles
-                          className="h-3.5 w-3.5 shrink-0 text-primary"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      handleSubmitMessage();
-                    }
-                  }}
-                  placeholder="Ask any thing..."
-                  rows={activeMode === "fullscreen" ? 3 : 2}
-                  disabled={isProcessing}
+                <AnimatedBotIcon
                   className={
-                    activeMode === "floating"
-                      ? "min-h-10 w-full resize-none bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-50"
-                      : "min-h-12 w-full resize-none bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-50"
+                    activeMode === "fullscreen" ? "h-8 w-8" : "h-6 w-6"
                   }
                 />
-                <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
-                  <button
-                    type="button"
-                    aria-label="Add attachment"
-                    disabled
-                    className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full opacity-45 focus:outline-none"
-                  >
-                    <Plus className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Use microphone"
-                    disabled
-                    className="ml-auto flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full opacity-45 focus:outline-none"
-                  >
-                    <Mic className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Send message"
-                    disabled={!hasMessage || isProcessing}
-                    onClick={handleSubmitMessage}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                      hasMessage && !isProcessing
+              </div>
+
+              <p
+                className={
+                  activeMode === "fullscreen"
+                    ? "text-balance text-3xl font-extrabold tracking-normal text-zinc-900 dark:text-zinc-50 sm:text-4xl"
+                    : "text-pretty text-base font-extrabold tracking-normal text-zinc-900 dark:text-zinc-50"
+                }
+              >
+                Nice to meet you! How can I help?
+              </p>
+            </div>
+          ) : (
+            <MessageList
+              messages={messages}
+              chatStatus={chatStatus}
+              messagesEndRef={messagesEndRef}
+            />
+          )}
+
+          <div
+            className={
+              activeMode === "fullscreen"
+                ? "mx-auto mt-10 w-full max-w-4xl"
+                : activeMode === "floating"
+                  ? "mt-5"
+                  : "mt-7"
+            }
+          >
+            <div
+              className={
+                activeMode === "floating"
+                  ? "rounded-2xl border-2 border-primary bg-white p-2.5 shadow-[0_14px_42px_rgba(20,99,255,0.1)] dark:bg-zinc-950"
+                  : "rounded-2xl border-2 border-primary bg-white p-3 shadow-[0_14px_42px_rgba(20,99,255,0.1)] dark:bg-zinc-950"
+              }
+            >
+              <div className="mb-2 flex">
+                <button
+                  type="button"
+                  aria-label={
+                    isPageContentAttached
+                      ? "Remove page content"
+                      : "Attach page content"
+                  }
+                  aria-pressed={isPageContentAttached}
+                  disabled={isProcessing}
+                  onClick={() =>
+                    setIsPageContentAttached((isAttached) => !isAttached)
+                  }
+                  className={`inline-flex h-6 max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-2 text-[11px] font-black leading-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-60 ${
+                    isPageContentAttached
+                      ? "border-primary bg-primary text-white"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-primary/15 dark:hover:text-zinc-50"
+                  }`}
+                  title={
+                    isPageContentAttached
+                      ? "Remove page content"
+                      : "Attach page content"
+                  }
+                >
+                  {isPageContentAttached ? (
+                    <Check className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <Plus className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="truncate">Page content</span>
+                </button>
+              </div>
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSubmitMessage();
+                  }
+                }}
+                placeholder="Ask any thing..."
+                rows={activeMode === "fullscreen" ? 3 : 2}
+                disabled={isProcessing}
+                className={
+                  activeMode === "floating"
+                    ? "min-h-10 w-full resize-none bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-50"
+                    : "min-h-12 w-full resize-none bg-transparent text-sm font-semibold text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-60 dark:text-zinc-50"
+                }
+              />
+              <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                <button
+                  type="button"
+                  aria-label="Add attachment"
+                  disabled
+                  className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full opacity-45 focus:outline-none"
+                >
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Use microphone"
+                  disabled
+                  className="ml-auto flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full opacity-45 focus:outline-none"
+                >
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={isProcessing ? "Stop response" : "Send message"}
+                  disabled={!isProcessing && !hasMessage}
+                  onClick={
+                    isProcessing ? handleAbortRequest : handleSubmitMessage
+                  }
+                  className={`flex h-8 w-8 items-center justify-center rounded-full transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    isProcessing
+                      ? "bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                      : hasMessage
                         ? "bg-primary text-white hover:bg-primary/90"
                         : "cursor-not-allowed bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
-                    }`}
-                  >
+                  }`}
+                >
+                  {isProcessing ? (
+                    <Square
+                      className="h-3.5 w-3.5 fill-current"
+                      aria-hidden="true"
+                    />
+                  ) : (
                     <Send className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </div>
+                  )}
+                </button>
               </div>
             </div>
-
           </div>
-        </section>
+        </div>
+      </section>
     </>
   );
 }

@@ -28,7 +28,10 @@ export default function RootLayout({
     >
       <body className="h-full overflow-hidden">
         <Navbar />
-        <div className="flex h-screen flex-col overflow-y-auto px-0 pb-20 pt-24">
+        <div
+          data-page-content
+          className="portfolio-page-shell flex h-screen flex-col overflow-y-auto px-0 pb-20 pt-24"
+        >
           {children}
         </div>
         <ChatLauncher />
