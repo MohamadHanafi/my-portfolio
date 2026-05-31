@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Footer from "@/components/layout/Footer";
@@ -62,6 +63,7 @@ export default function RootLayout({
         </div>
         <ChatLauncher />
         <Footer />
+        <Analytics />
       </body>
     </html>
   );
