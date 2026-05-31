@@ -11,8 +11,34 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://mohamadhanafi.io"),
   title: "Mohamad Hanafi",
-  description: "Portfolio website",
+  description:
+    "Portfolio website for Mohamad Hanafi, AI and software developer.",
+  openGraph: {
+    title: "Mohamad Hanafi",
+    description:
+      "Portfolio website for Mohamad Hanafi, AI and software developer.",
+    url: "/",
+    siteName: "Mohamad Hanafi",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Mohamad Hanafi portfolio",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Mohamad Hanafi",
+    description:
+      "Portfolio website for Mohamad Hanafi, AI and software developer.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({
